@@ -1,0 +1,234 @@
+---
+title: "Nkweteyim-FinalProject"
+author: "Raisa Nkweteyim"
+date: "5/12/2021"
+output: pdf_document
+---
+
+# Analysis of Boston Housing Dataset to Determine Factors Affecting Full-Value Property-Tax Rate
+
+# Introduction
+
+To carry out this data analysis, I will be using an inbuilt dataset in R called 'BostonHousing2'. The data was curated for a paper which investigated housing market data in Boston to measure the willingness to pay for clean air. The findings were published in the Journal of Environmental Economics and Management.
+The dataset has 506 observations and 19 variables which include:
+
+crim - per capita crime rate by town
+zn	- proportion of residential land zoned for lots over 25,000 sq.ft
+indus	- proportion of non-retail business acres per town
+chas	- Charles River dummy variable (= 1 if tract bounds river; 0 otherwise)
+nox	- nitric oxides concentration (parts per 10 million)
+rm	- average number of rooms per dwelling
+age	- proportion of owner-occupied units built prior to 1940
+dis	- weighted distances to five Boston employment centres
+rad	- index of accessibility to radial highways
+tax	- full-value property-tax rate per USD 10,000
+ptratio	- pupil-teacher ratio by town
+b	- 1000(B - 0.63)^2 where B is the proportion of blacks by town
+lstat	- percentage of lower status of the population
+medv	- median value of owner-occupied homes in USD 1000's
+cmedv	- corrected median value of owner-occupied homes in USD 1000's
+town	- name of town
+tract	- census tract
+lon	- longitude of census tract
+lat	- latitude of census tract
+
+I will be investigating the possible effects the above variables may have on tax (full-value property-tax rate per USD 10,000).
+
+I chose tax as my response variable because it would be interesting to find out if the value of a home, its number of rooms, its age and its location (distance to employment centers) has an effect on the full-value property-tax rate paid by homeowners who occupy their homes.
+By measuring property tax rate, one can predict the likelihood of someone investing in real estate in a particular town. The lower the property tax rate, the greater the incentive to invest in a particular town.
+
+
+# 1. Exploratory Data Analysis 
+
+*Reading The Data*
+```{r warning=FALSE}
+# Reading the data
+library(mlbench)
+data(BostonHousing2)
+dim(BostonHousing2)
+```
+
+*Missing Data and Predictor Characteristics*
+```{r}
+# Check for missing data
+anyNA(BostonHousing2)
+
+# Predictor characteristics
+str(BostonHousing2)
+```
+
+There was no missing data and almost all the variables have continuous values except the response variable (tax), tract, b, and rad which have integer values and town and chase which have categorical values.
+
+First, I will remove the categorical variables to ease the exploration of the dataset.
+```{r}
+boston <- subset(BostonHousing2, select = -c(town, chas))
+```
+
+*Correlation between predictors and outcome variable*
+Next, I will check the correlation between the response (tax) and the predictors by plotting a correlation matrix.
+```{r warning=FALSE}
+library(corrplot)
+COR <- cor(boston, use="everything", method ="pearson")
+corrplot(COR, method="ellipse")
+```
+
+It is seen that there is a significant positive correlation between rm and cmedv in addition to tax and age, a weak positive correlation between cmedv and dis, a weak negative correlations between tax and rm, dis and cmedv.
+Thus, as rm (average number of rooms per dwelling), cmedv (corrected median value of owner-occupied homes in USD 1000's) or dis (weighted distances to five Boston employment centres) is increasing, the tax is decreasing and as age is increasing, the tax of the property is increasing as well. As rm (average number of rooms per dwelling) increases, cmedv (corrected median value of owner-occupied homes in USD 1000's) increases as well.
+
+*Data Distribution*
+Now, I will check the distribution of the response variable.
+```{r}
+par(mfrow=c(1,2))
+hist(boston$tax, xlab="Full-value property-tax rate", main="Histogram: Property Tax")
+log_boston_tax <- log(boston$tax)
+hist(log_boston_tax, xlab="Log of Full-value property-tax rate", main="Histogram:
+     Log(Full-value property-tax rate)")
+```
+  
+  There was no significant improvement in the shape of the histograms of the response variable that had undergone a log transformation and when there was no transformation. Hence, the data was left as is. Even though the histograms are not entirely bell-shaped, since the sample size is large (506 observations), normality can be inferred.
+
+# 2. Linear Regression and Variable Selection
+*(a) Partitioning data randomly with a 2:1 ratio*
+```{r}
+library(caTools)
+set.seed(123)
+split = sample.split(boston, SplitRatio = 2/3)
+train = subset(boston, split == TRUE)
+test = subset(boston, split == FALSE)
+dim(train)
+dim(test) #number of rows of train and test sums up to 506 like original dataset
+```
+
+*Fitting Full Model*
+```{r}
+# Full model
+fit.full.train <- lm(train$tax ~ ., data = train)
+summary(fit.full.train)
+```
+
+*Stepwise variable selection method*
+```{r}
+library(MASS)
+fit.step <- stepAIC(fit.full.train, direction="both", k=log(nrow(train)), trace = FALSE)  
+fit.step$anova 
+summary(fit.step)
+```
+
+Final Model:
+train$tax ~ cmedv + zn + indus + rad
+The adjusted R-squared value is 0.8899 implying that 88.99% of the variation in property taxes can be accounted for by the cmdev (median value of owner-occupied homes), zn (proportion of residential land zoned for lots over 25,000 sq.ft), indus (proportion of non-retail business acres per town) and rad (index of accessibility to radial highways). The p-values of these 4 variables are all also less than 0.001 implying that these predictors are highly significantly related to the 
+response, tax.
+
+*Applying Model to Test Data*
+```{r}
+predict_step <- predict(fit.step, newdata = test)
+# sum of squared prediction error (SSPE)
+sum((test$tax - predict_step)**2)
+```
+
+*Refitting Final Model to Entire Dataset*
+```{r}
+fit.final <- lm(boston$tax ~ boston$cmedv + boston$zn + boston$indus + boston$rad, data=boston)
+summary(fit.final)
+```
+
+The adjusted R-squared value is 0.8883 implying that 88.83% of the variation in property taxes can be accounted for by the cmdev, zn, indus, and rad. The p-values of these 4 variables are all also less than 0.001 implying that these predictors are highly significantly related to the 
+response, tax. 88.83% is not very different from 88.85% (adjusted R-squared value of full model). However, the number of variables decreased from 17 to 4. Generally, the less complicated the model is, the better such as to prevent overfitting.
+
+# 3. Perform model diagnostics on the final model.
+*(a) Check Normality*
+```{r}
+library(car)
+
+#Studentized jackkinfe residuals
+r.jack <- rstudent(fit.final)
+
+# Graphs
+par(mfrow=c(1,2),mar=c(8,4,8,4)) 
+hist(r.jack, xlab="Jackknife Residual", col="green4", main="(a) Histogram") 
+qqPlot(fit.final, pch=19, cex=.8, col="orange", main="(b) Q-Q Plot") 
+
+# THE SHAPIRO-WILKS NORMALITY TEST
+shapiro.test(r.jack) 
+```
+
+The histogram has a fairly bell-shaped structure with a a couple of outliers while in the qqplot, majority of the points fall on the solid blue line with a couple of outliers again.
+The Shapiro-Wilk's test gave a p-value of 2.359e-10. All of these results suggest that the normality assumption has been violated.
+However, from the Central Limit Theorem, it can be concluded that since the data is large, the entire data tends towards a normal distribution
+
+*(b) Check Homoscedasticity*
+```{r}
+ncvTest(fit.final) 
+
+# Plot of Absolute Jackknife Residuals vs. Fitted values 
+spreadLevelPlot(fit.final, pch=20, cex=0.5, col="green4", 
+	main="Fit.final Model on Baseball Salary: Heteroscedasticity")
+# IF THE LINES ARE FLAT, THEN EQUAL VARIANCE IS JUSTIFIED. 
+```
+
+In the plot, the solid purple and dashed blue lines are not flat. Again, 
+there appears to be a trend in the data points in such a way that they form a defined pattern. These results imply that the equal variance assumption has been violated.
+Again, the Breusch-Pagan Test produced a significant p-value of 7.9786e-07
+(<0.05). This result confirms that the data indeed does not have equal variances and the 
+assumption has been violated.
+Thus, a power transformation of 2.843588 has been suggested.
+```{r}
+response <- boston$tax^(2.843588)
+fit.final <- lm(boston$tax ~ boston$cmedv + boston$zn + boston$indus + boston$rad, data=boston)
+```
+
+*(c) Check Independence*
+```{r}
+# Durbin-Watson Test for Autocorrelated Errors
+durbinWatsonTest(fit.final)
+```
+
+The Durbin-Watson test produced a p-value < 0.05. This implies that the data is in fact 
+independent.
+
+*(d) Check Linearity*
+```{r}
+# leverage plots or partial regression plot
+leveragePlots(fit.final, main="Partial Regression (Leverage) Plots") 
+```
+
+The blue lines on the 4 leverage plots follow a straight line. This implies that 
+all the predictors are linear. 
+
+*(e) Outlier Detection*
+```{r warning=FALSE}
+influencePlot(fit.final, id.method="identify", 
+	col="blue", 
+	main="Influence Plot", 
+	sub="Circle size is proportial to Cook's d")
+```
+
+*(f) Multicollinearity*
+```{r}
+# CONDITION NUMBER (> 100?)
+kappa(lm(boston$tax ~ boston$cmedv + boston$zn + boston$indus + boston$rad, data=boston -1, x=TRUE)$x);
+
+# COMPUTE VIF USING FUNCTION vif (> 10?)
+vif(lm(boston$tax ~ boston$cmedv + boston$zn + boston$indus + boston$rad, data=boston -1, x=TRUE)) 
+```
+
+When disregarding the intercept, kappa = 105.6268 which is only slightly greater than 100 implying that multicollinearity might not be a big issue.
+Using vif function across all the predictors, the resulting values are all below 10 implying that multicollinearity should be due to the intercept term.
+
+# Conclusion
+
+To conclude, the biggest indicators of the full-value property-tax rate per USD 10,000 is the cmedv	- corrected median value of owner-occupied homes in USD 1000's, zn	- proportion of residential land zoned for lots over 25,000 sq.ft, indus	- proportion of non-retail business acres per town and rad	- index of accessibility to radial highways. 
+The variation in tax is accounted for by these variables by 88.99%. So, the prediction rate is not very high.
+
+In the future, I would observe if an increase in variable 'indus' (proportion of non-retail business acres per town) causes an increase in 'nox' (nitric oxides concentration (parts per 10 million) from town to town. I could also check if an increase in 'nox' is related to whether of not the town is bounded by the Charles River (chas	- Charles River dummy variable (= 1 if tract bounds river; 0 otherwise)).
+If such a relationship exists, it might be an indication that waste from industries are being dumped in the river.
+
+# References
+
+Harrison, D. and Rubinfeld, D.L. (1978). Hedonic prices and the demand for clean air. Journal of Environmental Economics and Management, 5, 81–102.
+
+Gilley, O.W., and R. Kelley Pace (1996). On the Harrison and Rubinfeld Data. Journal of Environmental Economics and Management, 31, 403–405. [Provided corrections and examined censoring.]
+
+Newman, D.J. & Hettich, S. & Blake, C.L. & Merz, C.J. (1998). UCI Repository of machine learning databases [http://www.ics.uci.edu/~mlearn/MLRepository.html]. Irvine, CA: University of California, Department of Information and Computer Science.
+
+Pace, R. Kelley, and O.W. Gilley (1997). Using the Spatial Configuration of the Data to Improve Estimation. Journal of the Real Estate Finance and Economics, 14, 333–340. [Added georeferencing and spatial estimation.]
